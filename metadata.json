@@ -1,0 +1,6 @@
+{
+  "name": "SportTrack",
+  "description": "College Sports Equipment Management System for Dr. Moonje Institute of Management and Computer Studies",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

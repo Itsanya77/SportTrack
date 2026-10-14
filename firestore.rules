@@ -1,0 +1,209 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // HELPER FUNCTIONS
+    // ==========================================
+    
+    // Check if the user is authenticated with Firebase Auth
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Verify if the caller is the owner of the document
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Helper to retrieve user profile document from Firestore
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasUserDoc() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // Read user role directly from the users collection in Firestore
+    function getUserRole() {
+      return getUserDoc().data.role;
+    }
+
+    // Role checks based strictly on Firestore users collection
+    function isStudent() {
+      return hasUserDoc() && getUserRole() == 'STUDENT';
+    }
+
+    function isTeacher() {
+      return hasUserDoc() && getUserRole() == 'TEACHER';
+    }
+
+    function isAdmin() {
+      return hasUserDoc() && getUserRole() == 'ADMIN';
+    }
+
+    // Staff members include teachers and administrators
+    function isStaff() {
+      return hasUserDoc() && (getUserRole() == 'TEACHER' || getUserRole() == 'ADMIN');
+    }
+
+    // ==========================================
+    // 1. USERS COLLECTION
+    // ==========================================
+    match /users/{userId} {
+      // Authenticated users may read their own profile; staff may view profiles
+      allow read: if isSignedIn() && (request.auth.uid == userId || isStaff());
+
+      // Users may create their own initial profile document ONLY as STUDENT with verified @moonjeinstitute.com email; 
+      // Admins can create any profile; 
+      // Teachers can create staff profiles with role == 'TEACHER' or enroll students with role == 'STUDENT'
+      allow create: if isSignedIn() && (
+        (
+          request.auth.uid == userId && 
+          request.resource.data.role == 'STUDENT' &&
+          request.resource.data.email == request.auth.token.email &&
+          request.auth.token.email_verified == true &&
+          request.auth.token.email.matches('^[a-zA-Z0-9._%+-]+@moonjeinstitute[.]com$')
+        ) || 
+        isAdmin() || 
+        (isTeacher() && (request.resource.data.role == 'TEACHER' || request.resource.data.role == 'STUDENT'))
+      );
+
+      // Users can update their own profile, but CANNOT change their own role (anti-escalation)
+      // Only administrators are permitted to alter user roles
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role)
+      );
+
+      // Teachers may permanently delete student accounts; administrators may delete user records
+      // Students can also self-delete their own student profile account
+      allow delete: if isSignedIn() && (
+        isAdmin() || 
+        (isTeacher() && resource.data.role == 'STUDENT') ||
+        (request.auth.uid == userId && resource.data.role == 'STUDENT')
+      );
+    }
+
+    // ==========================================
+    // 2. EQUIPMENT COLLECTION
+    // ==========================================
+    match /equipment/{equipmentId} {
+      // Any authenticated user can read the sports equipment catalog
+      allow read: if isSignedIn();
+
+      // Only teachers and admins may add or modify equipment (including inventory deltas)
+      // Students are strictly blocked from modifying quantities or catalog items
+      allow create, update: if isStaff();
+
+      // Only administrators can permanently delete equipment
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================
+    // 3. REQUESTS COLLECTION
+    // ==========================================
+    match /requests/{requestId} {
+      // Students can only read their own requests; staff can view all requisitions
+      allow read: if isSignedIn() && (
+        isStaff() ||
+        resource.data.student_id == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.student_id == request.auth.token.email)
+      );
+
+      // Creation rules:
+      // 1. Normal Student: Student creates their own request with status PENDING.
+      //    Must own student_id (by auth UID or email); cannot spoof request_source as TEACHER_CREATED.
+      // 2. Teacher/Admin Emergency/Offline Request:
+      //    Staff (TEACHER or ADMIN) can create request on behalf of an existing registered STUDENT.
+      //    - student_id must exist in users collection.
+      //    - target user role MUST be 'STUDENT' (cannot assign to teacher or admin).
+      //    - initial status must be 'PENDING'.
+      allow create: if isSignedIn() && (
+        (
+          (request.resource.data.student_id == request.auth.uid || (request.auth.token.email != null && request.resource.data.student_id == request.auth.token.email)) &&
+          request.resource.data.status == 'PENDING' &&
+          request.resource.data.get('request_source', 'STUDENT_SUBMITTED') != 'TEACHER_CREATED'
+        ) ||
+        (
+          isStaff() &&
+          request.resource.data.status == 'PENDING' &&
+          exists(/databases/$(database)/documents/users/$(request.resource.data.student_id)) &&
+          get(/databases/$(database)/documents/users/$(request.resource.data.student_id)).data.role == 'STUDENT'
+        )
+      );
+
+      // Staff (teachers/admins) can update request status (APPROVED, REJECTED, ISSUED, RETURNED)
+      // Students can cancel their own PENDING requisition to CANCELLED
+      allow update: if isStaff() || (
+        (resource.data.student_id == request.auth.uid || (request.auth.token.email != null && resource.data.student_id == request.auth.token.email)) &&
+        resource.data.status == 'PENDING' &&
+        request.resource.data.status == 'CANCELLED'
+      );
+
+      // Only administrators can delete equipment requests
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================
+    // 4. ISSUES COLLECTION
+    // ==========================================
+    match /issues/{issueId} {
+      // Students can only read their own issued records; staff can inspect all records
+      allow read: if isSignedIn() && (
+        isStaff() ||
+        resource.data.student_id == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.student_id == request.auth.token.email)
+      );
+
+      // Only staff (teachers/admins) can issue equipment and create issue records
+      allow create: if isStaff();
+
+      // Only staff can update issue records
+      allow update: if isStaff();
+
+      // Only administrators can delete issue records
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================
+    // 5. RETURNS COLLECTION
+    // ==========================================
+    match /returns/{returnId} {
+      // Students can only read their own return records; staff can inspect all returns
+      allow read: if isSignedIn() && (
+        isStaff() ||
+        resource.data.student_id == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.student_id == request.auth.token.email)
+      );
+
+      // Students can create a return request only for their own gear with status RETURN_PENDING
+      // Staff can also record returns
+      allow create: if isSignedIn() && (
+        (
+          (request.resource.data.student_id == request.auth.uid || (request.auth.token.email != null && request.resource.data.student_id == request.auth.token.email)) &&
+          request.resource.data.status == 'RETURN_PENDING'
+        ) ||
+        isStaff()
+      );
+
+      // Only staff (teachers/admins) can accept and process returns (mark RETURNED, set condition/remarks)
+      allow update: if isStaff();
+
+      // Only administrators can delete return records
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================
+    // 6. SETTINGS COLLECTION
+    // ==========================================
+    match /settings/{docId} {
+      // Any visitor or authenticated user can read settings on app load (e.g. academic year, institutional configs)
+      allow read: if true;
+
+      // Only staff members (TEACHER or ADMIN) can update system settings
+      allow write: if isStaff();
+    }
+  }
+}

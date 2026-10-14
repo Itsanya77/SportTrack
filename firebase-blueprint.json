@@ -1,0 +1,139 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access for students, teachers, and administrators",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["STUDENT", "TEACHER", "ADMIN"] },
+        "student_id": { "type": "string" },
+        "course": { "type": "string" },
+        "year": { "type": "string" },
+        "division": { "type": "string" },
+        "phone": { "type": "string" },
+        "profile_completed": { "type": "boolean" },
+        "active": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role", "active", "created_at"]
+    },
+    "Equipment": {
+      "title": "Equipment",
+      "description": "Sports equipment inventory item with quantity tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "equipment_code": { "type": "string" },
+        "name": { "type": "string" },
+        "sport_id": { "type": "string" },
+        "quantity": { "type": "number" },
+        "available_quantity": { "type": "number" },
+        "issued_quantity": { "type": "number" },
+        "condition": { "type": "string", "enum": ["EXCELLENT", "GOOD", "FAIR", "DAMAGED"] },
+        "status": { "type": "string", "enum": ["AVAILABLE", "ISSUED", "RETURN_PENDING", "DAMAGED", "LOST", "ARCHIVED"] },
+        "active": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "equipment_code", "name", "sport_id", "quantity", "available_quantity", "issued_quantity", "condition", "status", "active", "created_at"]
+    },
+    "EquipmentRequest": {
+      "title": "EquipmentRequest",
+      "description": "Equipment requisition submitted by student or created by teacher on behalf of student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "student_id": { "type": "string" },
+        "equipment_id": { "type": "string" },
+        "quantity": { "type": "number" },
+        "expected_return": { "type": "string" },
+        "required_date": { "type": "string" },
+        "purpose": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "ISSUED", "RETURNED", "OVERDUE"] },
+        "created_at": { "type": "string" },
+        "approved_at": { "type": "string" },
+        "rejected_at": { "type": "string" },
+        "rejection_reason": { "type": "string" },
+        "teacher_remarks": { "type": "string" },
+        "created_by": { "type": "string" },
+        "created_by_role": { "type": "string", "enum": ["TEACHER", "ADMIN", "STUDENT"] },
+        "request_source": { "type": "string", "enum": ["STUDENT_SUBMITTED", "TEACHER_CREATED"] }
+      },
+      "required": ["id", "student_id", "equipment_id", "quantity", "expected_return", "purpose", "status", "created_at"]
+    },
+    "IssueRecord": {
+      "title": "IssueRecord",
+      "description": "Physical handover custody log when equipment is issued",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "request_id": { "type": "string" },
+        "student_id": { "type": "string" },
+        "equipment_id": { "type": "string" },
+        "quantity": { "type": "number" },
+        "issued_by": { "type": "string" },
+        "issued_at": { "type": "string" },
+        "expected_return": { "type": "string" },
+        "actual_return": { "type": "string" },
+        "status": { "type": "string", "enum": ["ISSUED", "RETURNED"] }
+      },
+      "required": ["id", "request_id", "student_id", "equipment_id", "quantity", "issued_by", "issued_at", "expected_return", "status"]
+    },
+    "ReturnRecord": {
+      "title": "ReturnRecord",
+      "description": "Return counter inspection and acceptance record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "issue_id": { "type": "string" },
+        "student_id": { "type": "string" },
+        "requested_at": { "type": "string" },
+        "accepted_at": { "type": "string" },
+        "condition": { "type": "string", "enum": ["EXCELLENT", "GOOD", "FAIR", "DAMAGED"] },
+        "remarks": { "type": "string" },
+        "accepted_by": { "type": "string" },
+        "status": { "type": "string", "enum": ["RETURN_PENDING", "RETURNED", "REJECTED"] }
+      },
+      "required": ["id", "issue_id", "requested_at", "status"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "System and departmental configuration parameters",
+      "type": "object",
+      "properties": {
+        "academic_year": { "type": "string" },
+        "college_name": { "type": "string" },
+        "department": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles indexed by UID"
+    },
+    "/equipment/{equipmentId}": {
+      "schema": { "$ref": "#/entities/Equipment" },
+      "description": "Sports gear inventory records"
+    },
+    "/requests/{requestId}": {
+      "schema": { "$ref": "#/entities/EquipmentRequest" },
+      "description": "Student equipment requisitions and teacher-created emergency requests"
+    },
+    "/issues/{issueId}": {
+      "schema": { "$ref": "#/entities/IssueRecord" },
+      "description": "Active and historical equipment issue custody records"
+    },
+    "/returns/{returnId}": {
+      "schema": { "$ref": "#/entities/ReturnRecord" },
+      "description": "Return inspection logs and condition audits"
+    },
+    "/settings/{docId}": {
+      "schema": { "$ref": "#/entities/Settings" },
+      "description": "System settings documents including app academic year"
+    }
+  }
+}
